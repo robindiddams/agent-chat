@@ -1,0 +1,13 @@
+{
+  "name": "@agent-chat/agent",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "bun run --watch src/main.ts",
+    "start": "bun run src/main.ts"
+  },
+  "dependencies": {
+    "@mariozechner/pi-ai": "file:../../../pi-mono/packages/ai",
+    "@mariozechner/pi-agent-core": "file:../../../pi-mono/packages/agent"
+  }
+}

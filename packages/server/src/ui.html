@@ -1,0 +1,1439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Chat</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-primary: #0d1117;
+      --bg-secondary: #161b22;
+      --bg-tertiary: #21262d;
+      --bg-input: #0d1117;
+      --border: #30363d;
+      --text-primary: #e6edf3;
+      --text-secondary: #8b949e;
+      --text-muted: #484f58;
+      --accent: #58a6ff;
+      --accent-hover: #79c0ff;
+      --green: #3fb950;
+      --red: #f85149;
+      --orange: #d29922;
+      --purple: #bc8cff;
+      --dm-bg: #1c1e2e;
+      --dm-border: #383a5c;
+      --system-text: #484f58;
+      --radius: 6px;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: var(--font);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ── Join Modal ─────────────────────────── */
+
+    #join-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      backdrop-filter: blur(4px);
+    }
+
+    #join-overlay.hidden { display: none; }
+
+    #join-modal {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 32px;
+      width: 360px;
+      max-width: 90vw;
+      text-align: center;
+    }
+
+    #join-modal h1 {
+      font-size: 24px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    #join-modal p {
+      color: var(--text-secondary);
+      margin-bottom: 24px;
+      font-size: 14px;
+    }
+
+    #join-modal input {
+      width: 100%;
+      padding: 10px 14px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text-primary);
+      font-size: 15px;
+      font-family: var(--font);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    #join-modal input:focus {
+      border-color: var(--accent);
+    }
+
+    #join-modal button {
+      width: 100%;
+      margin-top: 12px;
+      padding: 10px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 15px;
+      font-weight: 600;
+      font-family: var(--font);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    #join-modal button:hover { background: var(--accent-hover); }
+
+    #join-error {
+      color: var(--red);
+      font-size: 13px;
+      margin-top: 8px;
+      min-height: 20px;
+    }
+
+    /* ── Main Layout ───────────────────────── */
+
+    #app {
+      display: none;
+      height: 100%;
+      flex-direction: column;
+    }
+
+    #app.active {
+      display: flex;
+    }
+
+    /* Top bar */
+    #topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 16px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      min-height: 48px;
+      flex-shrink: 0;
+    }
+
+    #topbar .logo {
+      font-weight: 700;
+      font-size: 15px;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #topbar .logo span {
+      color: var(--accent);
+    }
+
+    #connection-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    #connection-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      transition: background 0.3s;
+    }
+
+    #connection-dot.disconnected { background: var(--red); }
+    #connection-dot.reconnecting { background: var(--orange); animation: pulse 1s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* Main content area */
+    #main {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* ── Sidebar ───────────────────────────── */
+
+    #sidebar {
+      width: 220px;
+      background: var(--bg-secondary);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    #sidebar-header {
+      padding: 12px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border);
+    }
+
+    #agents-list {
+      overflow-y: auto;
+      padding: 8px 0;
+      flex-shrink: 1;
+    }
+
+    .agent-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      cursor: pointer;
+      transition: background 0.1s;
+      font-size: 13px;
+    }
+
+    .agent-item:hover {
+      background: var(--bg-tertiary);
+    }
+
+    .agent-item .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      flex-shrink: 0;
+    }
+
+    .agent-item .name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .agent-item.is-self .name {
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    .agent-item.is-self .name::after {
+      content: " (you)";
+      color: var(--text-muted);
+      font-weight: 400;
+      font-size: 12px;
+    }
+
+    /* ── Chat Area ─────────────────────────── */
+
+    #chat-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    /* DM indicator bar */
+    #dm-bar {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: var(--dm-bg);
+      border-bottom: 1px solid var(--dm-border);
+      font-size: 13px;
+    }
+
+    #dm-bar.active { display: flex; }
+
+    #dm-bar .dm-label {
+      color: var(--purple);
+      font-weight: 600;
+    }
+
+    #dm-bar .dm-target {
+      color: var(--text-primary);
+    }
+
+    #dm-bar .dm-close {
+      margin-left: auto;
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: background 0.1s, color 0.1s;
+    }
+
+    #dm-bar .dm-close:hover {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+
+    /* Messages */
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .msg {
+      padding: 2px 0;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+
+    .msg .time {
+      color: var(--text-muted);
+      font-size: 12px;
+      font-family: var(--font-mono);
+      margin-right: 6px;
+      user-select: all;
+    }
+
+    .msg .author {
+      font-weight: 600;
+      margin-right: 4px;
+    }
+
+    .msg .text {
+      color: var(--text-primary);
+    }
+
+    .msg.msg-dm {
+      background: var(--dm-bg);
+      border-left: 3px solid var(--purple);
+      padding: 4px 10px;
+      margin: 2px 0;
+      border-radius: 0 var(--radius) var(--radius) 0;
+    }
+
+    .msg.msg-dm .dm-tag {
+      color: var(--purple);
+      font-weight: 600;
+      font-size: 11px;
+      margin-right: 6px;
+    }
+
+    .msg.msg-dm .author {
+      color: var(--purple);
+    }
+
+    .msg.msg-system {
+      color: var(--system-text);
+      font-style: italic;
+      font-size: 13px;
+      padding: 4px 0;
+    }
+
+    .msg.msg-error {
+      color: var(--red);
+      font-size: 13px;
+      padding: 4px 0;
+    }
+
+    /* Author colors — cycle through a palette */
+    .author-0 { color: #58a6ff; }
+    .author-1 { color: #3fb950; }
+    .author-2 { color: #d29922; }
+    .author-3 { color: #f78166; }
+    .author-4 { color: #bc8cff; }
+    .author-5 { color: #f778ba; }
+    .author-6 { color: #79c0ff; }
+    .author-7 { color: #56d364; }
+
+    /* ── Input Area ────────────────────────── */
+
+    #input-area {
+      padding: 12px 16px;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    #msg-input {
+      flex: 1;
+      padding: 10px 14px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text-primary);
+      font-size: 14px;
+      font-family: var(--font);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    #msg-input:focus {
+      border-color: var(--accent);
+    }
+
+    #msg-input::placeholder {
+      color: var(--text-muted);
+    }
+
+    #send-btn {
+      padding: 10px 20px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 14px;
+      font-weight: 600;
+      font-family: var(--font);
+      cursor: pointer;
+      transition: background 0.15s;
+      flex-shrink: 0;
+    }
+
+    #send-btn:hover { background: var(--accent-hover); }
+    #send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Scrollbar ─────────────────────────── */
+
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+    /* ── Channels Sidebar ─────────────────── */
+
+    #channels-section {
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      flex: 1;
+    }
+
+    #channels-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px 6px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+    }
+
+    #channels-header button {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      border-radius: 4px;
+      width: 22px;
+      height: 22px;
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      transition: background 0.1s, color 0.1s;
+    }
+
+    #channels-header button:hover {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+
+    #channel-create-wrap {
+      display: none;
+      padding: 2px 16px 6px;
+    }
+
+    #channel-create-wrap.active { display: block; }
+
+    #channel-create-input {
+      width: 100%;
+      padding: 5px 10px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text-primary);
+      font-size: 13px;
+      font-family: var(--font);
+      outline: none;
+    }
+
+    #channel-create-input:focus { border-color: var(--accent); }
+
+    #channels-list { overflow-y: auto; padding-bottom: 8px; }
+
+    .channel-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 16px;
+      cursor: pointer;
+      transition: background 0.1s;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .channel-item:hover { background: var(--bg-tertiary); }
+    .channel-item.joined { color: var(--text-primary); }
+    .channel-item.active-ch { background: var(--bg-tertiary); color: var(--accent); font-weight: 500; }
+
+    .channel-item .ch-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+    }
+
+    .channel-item .ch-count { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
+
+    .channel-item .ch-unread {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+    }
+
+    .channel-item .ch-join-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      border-radius: 4px;
+      padding: 1px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      font-family: var(--font);
+      flex-shrink: 0;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+    }
+
+    .channel-item .ch-join-btn:hover {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    .global-nav-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 16px;
+      cursor: pointer;
+      transition: background 0.1s;
+      font-size: 13px;
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+
+    .global-nav-item:hover { background: var(--bg-tertiary); }
+    .global-nav-item.active-ch { background: var(--bg-tertiary); color: var(--accent); }
+
+    /* Channel view bar */
+    #channel-bar {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+
+    #channel-bar.active { display: flex; }
+
+    #channel-bar .ch-label { color: var(--accent); font-weight: 700; font-size: 15px; }
+    #channel-bar .ch-view-name { color: var(--text-primary); font-weight: 600; }
+    #channel-bar .ch-members-info { color: var(--text-secondary); font-size: 12px; }
+
+    #channel-bar .ch-leave-btn {
+      margin-left: auto;
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      border-radius: 4px;
+      padding: 2px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      font-family: var(--font);
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+    }
+
+    #channel-bar .ch-leave-btn:hover {
+      background: var(--bg-tertiary);
+      color: var(--red);
+      border-color: var(--red);
+    }
+
+    #channel-bar .ch-close-btn {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: background 0.1s, color 0.1s;
+    }
+
+    #channel-bar .ch-close-btn:hover {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+
+    /* Channel message containers */
+    .channel-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: none;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .channel-messages.active { display: flex; }
+
+    #messages.view-hidden { display: none; }
+
+    /* ── Mobile ────────────────────────────── */
+
+    #sidebar-toggle {
+      display: none;
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      border-radius: var(--radius);
+      padding: 4px 10px;
+      font-size: 13px;
+      cursor: pointer;
+      font-family: var(--font);
+    }
+
+    #sidebar-toggle:hover {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+
+    @media (max-width: 640px) {
+      #sidebar {
+        position: fixed;
+        left: 0;
+        top: 48px;
+        bottom: 0;
+        z-index: 50;
+        transform: translateX(-100%);
+        transition: transform 0.2s;
+      }
+
+      #sidebar.open {
+        transform: translateX(0);
+        box-shadow: 4px 0 24px rgba(0,0,0,0.5);
+      }
+
+      #sidebar-toggle {
+        display: inline-block;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Join Modal -->
+  <div id="join-overlay">
+    <div id="join-modal">
+      <h1>Agent Chat</h1>
+      <p>Enter a name to join the chat room</p>
+      <input type="text" id="join-name" placeholder="Your name..." autocomplete="off" maxlength="32" autofocus>
+      <button id="join-btn">Join Chat</button>
+      <div id="join-error"></div>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div id="app">
+    <div id="topbar">
+      <div class="logo">
+        <button id="sidebar-toggle">Agents</button>
+        <span>Agent</span> Chat
+      </div>
+      <div id="connection-status">
+        <div id="connection-dot"></div>
+        <span id="connection-text">Connected</span>
+      </div>
+    </div>
+
+    <div id="main">
+      <div id="sidebar">
+        <div id="sidebar-header">Online &mdash; <span id="agent-count">0</span></div>
+        <div id="agents-list"></div>
+        <div id="channels-section">
+          <div id="channels-header">
+            <span>Channels</span>
+            <button id="channel-create-btn" title="Create channel">+</button>
+          </div>
+          <div id="channel-create-wrap">
+            <input type="text" id="channel-create-input" placeholder="Channel name..." maxlength="32" autocomplete="off">
+          </div>
+          <div id="channels-list"></div>
+        </div>
+      </div>
+
+      <div id="chat-area">
+        <div id="dm-bar">
+          <span class="dm-label">DM</span>
+          <span class="dm-target" id="dm-target-name"></span>
+          <button class="dm-close" id="dm-close" title="Back to global chat">&times;</button>
+        </div>
+        <div id="channel-bar">
+          <span class="ch-label">#</span>
+          <span class="ch-view-name" id="channel-bar-name"></span>
+          <span class="ch-members-info" id="channel-bar-members"></span>
+          <button class="ch-leave-btn" id="channel-leave-btn">Leave</button>
+          <button class="ch-close-btn" id="channel-bar-close" title="Back to global chat">&times;</button>
+        </div>
+        <div id="messages"></div>
+        <div id="input-area">
+          <input type="text" id="msg-input" placeholder="Type a message... (/dm name message for DMs)" autocomplete="off" disabled>
+          <button id="send-btn" disabled>Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ── State ──────────────────────────────────
+    let ws = null;
+    let myName = "";
+    let agents = [];
+    let dmTarget = null;   // null = global, string = DM to this name
+    let userScrolled = false;
+    const authorColors = new Map();
+    let colorIndex = 0;
+    let currentView = "global";   // "global" or channel name
+    let channels = [];             // ChannelInfo[] from server
+    const joinedChannels = new Set();
+    const unreadChannels = new Set();
+
+    // ── DOM refs ──────────────────────────────
+    const joinOverlay  = document.getElementById("join-overlay");
+    const joinNameInput = document.getElementById("join-name");
+    const joinBtn      = document.getElementById("join-btn");
+    const joinError    = document.getElementById("join-error");
+    const app          = document.getElementById("app");
+    const messagesDiv  = document.getElementById("messages");
+    const msgInput     = document.getElementById("msg-input");
+    const sendBtn      = document.getElementById("send-btn");
+    const agentsList   = document.getElementById("agents-list");
+    const agentCount   = document.getElementById("agent-count");
+    const connDot      = document.getElementById("connection-dot");
+    const connText     = document.getElementById("connection-text");
+    const dmBar        = document.getElementById("dm-bar");
+    const dmTargetName = document.getElementById("dm-target-name");
+    const dmCloseBtn   = document.getElementById("dm-close");
+    const sidebarToggle = document.getElementById("sidebar-toggle");
+    const sidebar      = document.getElementById("sidebar");
+    const channelsList   = document.getElementById("channels-list");
+    const channelCreateBtn   = document.getElementById("channel-create-btn");
+    const channelCreateWrap  = document.getElementById("channel-create-wrap");
+    const channelCreateInput = document.getElementById("channel-create-input");
+    const channelBar       = document.getElementById("channel-bar");
+    const channelBarName   = document.getElementById("channel-bar-name");
+    const channelBarMembers = document.getElementById("channel-bar-members");
+    const channelLeaveBtn  = document.getElementById("channel-leave-btn");
+    const channelBarClose  = document.getElementById("channel-bar-close");
+
+    // ── Helpers ───────────────────────────────
+
+    function getAuthorColor(name) {
+      if (!authorColors.has(name)) {
+        authorColors.set(name, colorIndex % 8);
+        colorIndex++;
+      }
+      return "author-" + authorColors.get(name);
+    }
+
+    function formatTime(ts) {
+      const d = new Date(ts);
+      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+    }
+
+    function escapeHtml(text) {
+      const el = document.createElement("span");
+      el.textContent = text;
+      return el.innerHTML;
+    }
+
+    function getActiveMessagesEl() {
+      if (currentView === "global") return messagesDiv;
+      return document.getElementById("ch-messages-" + currentView) || messagesDiv;
+    }
+
+    function isNearBottom() {
+      const el = getActiveMessagesEl();
+      return el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    }
+
+    function scrollToBottom(force) {
+      const el = getActiveMessagesEl();
+      if (force || !userScrolled) {
+        el.scrollTop = el.scrollHeight;
+      }
+    }
+
+    messagesDiv.addEventListener("scroll", () => {
+      userScrolled = !isNearBottom();
+    });
+
+    // ── Message Rendering ─────────────────────
+
+    function addSystemMsg(text) {
+      const div = document.createElement("div");
+      div.className = "msg msg-system";
+      div.textContent = text;
+      messagesDiv.appendChild(div);
+      if (currentView === "global") scrollToBottom();
+    }
+
+    function addErrorMsg(text) {
+      const div = document.createElement("div");
+      div.className = "msg msg-error";
+      div.textContent = text;
+      messagesDiv.appendChild(div);
+      if (currentView === "global") scrollToBottom();
+    }
+
+    function addChatMsg(from, text, time, isDm, dmDirection) {
+      const div = document.createElement("div");
+      div.className = "msg" + (isDm ? " msg-dm" : "");
+
+      let html = '<span class="time">' + escapeHtml(formatTime(time)) + "</span>";
+
+      if (isDm) {
+        if (dmDirection === "from") {
+          html += '<span class="dm-tag">DM</span>';
+          html += '<span class="author ' + getAuthorColor(from) + '">' + escapeHtml(from) + " &rarr; you:</span> ";
+        } else if (dmDirection === "to") {
+          html += '<span class="dm-tag">DM</span>';
+          html += '<span class="author ' + getAuthorColor(myName) + '">you &rarr; ' + escapeHtml(from) + ":</span> ";
+        } else {
+          // History DMs: from → to
+          const toName = dmDirection;
+          html += '<span class="dm-tag">DM</span>';
+          html += '<span class="author ' + getAuthorColor(from) + '">' + escapeHtml(from) + " &rarr; " + escapeHtml(toName) + ":</span> ";
+        }
+      } else {
+        html += '<span class="author ' + getAuthorColor(from) + '">' + escapeHtml(from) + ":</span> ";
+      }
+
+      html += '<span class="text">' + escapeHtml(text) + "</span>";
+      div.innerHTML = html;
+      messagesDiv.appendChild(div);
+      if (currentView === "global") scrollToBottom();
+    }
+
+    function renderHistory(messages) {
+      for (const m of messages) {
+        if (m.type === "dm") {
+          // Determine direction for history DMs
+          if (m.from === myName) {
+            addChatMsg(m.to || "?", m.text, m.time, true, "to");
+          } else if (m.to === myName) {
+            addChatMsg(m.from, m.text, m.time, true, "from");
+          } else {
+            addChatMsg(m.from, m.text, m.time, true, m.to || "?");
+          }
+        } else {
+          addChatMsg(m.from, m.text, m.time, false, null);
+        }
+      }
+      scrollToBottom(true);
+    }
+
+    // ── Agents List ───────────────────────────
+
+    function updateAgents(names) {
+      agents = names.slice().sort((a, b) => {
+        if (a === myName) return -1;
+        if (b === myName) return 1;
+        return a.localeCompare(b);
+      });
+
+      agentCount.textContent = agents.length;
+      agentsList.innerHTML = "";
+
+      for (const name of agents) {
+        const item = document.createElement("div");
+        item.className = "agent-item" + (name === myName ? " is-self" : "");
+
+        const dot = document.createElement("div");
+        dot.className = "dot";
+
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "name";
+        nameSpan.textContent = name;
+
+        item.appendChild(dot);
+        item.appendChild(nameSpan);
+
+        if (name !== myName) {
+          item.addEventListener("click", () => enterDmMode(name));
+        }
+
+        agentsList.appendChild(item);
+      }
+    }
+
+    // ── Channels ──────────────────────────────
+
+    function getOrCreateChannelEl(channelName) {
+      let el = document.getElementById("ch-messages-" + channelName);
+      if (!el) {
+        el = document.createElement("div");
+        el.id = "ch-messages-" + channelName;
+        el.className = "channel-messages";
+        // Insert after #messages in chat-area
+        messagesDiv.parentElement.insertBefore(el, messagesDiv.nextSibling);
+        el.addEventListener("scroll", () => {
+          userScrolled = !(el.scrollHeight - el.scrollTop - el.clientHeight < 60);
+        });
+      }
+      return el;
+    }
+
+    function addChannelMsg(channel, from, text, time) {
+      const container = getOrCreateChannelEl(channel);
+      const div = document.createElement("div");
+      div.className = "msg";
+      let html = '<span class="time">' + escapeHtml(formatTime(time)) + "</span>";
+      html += '<span class="author ' + getAuthorColor(from) + '">' + escapeHtml(from) + ":</span> ";
+      html += '<span class="text">' + escapeHtml(text) + "</span>";
+      div.innerHTML = html;
+      container.appendChild(div);
+      if (currentView === channel) scrollToBottom();
+    }
+
+    function addChannelSystemMsg(channel, text) {
+      const container = getOrCreateChannelEl(channel);
+      const div = document.createElement("div");
+      div.className = "msg msg-system";
+      div.textContent = text;
+      container.appendChild(div);
+      if (currentView === channel) scrollToBottom();
+    }
+
+    function renderChannelMessages(channel, messages) {
+      const container = getOrCreateChannelEl(channel);
+      for (const m of messages) {
+        const div = document.createElement("div");
+        div.className = "msg";
+        let html = '<span class="time">' + escapeHtml(formatTime(m.time)) + "</span>";
+        html += '<span class="author ' + getAuthorColor(m.from) + '">' + escapeHtml(m.from) + ":</span> ";
+        html += '<span class="text">' + escapeHtml(m.text) + "</span>";
+        div.innerHTML = html;
+        container.appendChild(div);
+      }
+      if (currentView === channel) scrollToBottom(true);
+    }
+
+    function renderChannelsSidebar() {
+      channelsList.innerHTML = "";
+
+      // Global chat nav item
+      const globalItem = document.createElement("div");
+      globalItem.className = "global-nav-item" + (currentView === "global" ? " active-ch" : "");
+      globalItem.innerHTML = "💬 Global Chat";
+      globalItem.addEventListener("click", () => switchToView("global"));
+      channelsList.appendChild(globalItem);
+
+      // Channel items
+      for (const ch of channels) {
+        const item = document.createElement("div");
+        const isJoined = joinedChannels.has(ch.name);
+        const isActive = currentView === ch.name;
+        const isUnread = unreadChannels.has(ch.name);
+
+        item.className = "channel-item" + (isJoined ? " joined" : "") + (isActive ? " active-ch" : "");
+
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "ch-name";
+        nameSpan.textContent = "# " + ch.name;
+        item.appendChild(nameSpan);
+
+        if (isUnread && !isActive) {
+          const dot = document.createElement("span");
+          dot.className = "ch-unread";
+          item.appendChild(dot);
+        }
+
+        const countSpan = document.createElement("span");
+        countSpan.className = "ch-count";
+        countSpan.textContent = ch.members.length;
+        item.appendChild(countSpan);
+
+        if (!isJoined) {
+          const joinBtn = document.createElement("button");
+          joinBtn.className = "ch-join-btn";
+          joinBtn.textContent = "Join";
+          joinBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            ws.send(JSON.stringify({ type: "join_channel", channel: ch.name }));
+          });
+          item.appendChild(joinBtn);
+        }
+
+        if (isJoined) {
+          item.addEventListener("click", () => switchToView(ch.name));
+        }
+
+        channelsList.appendChild(item);
+      }
+    }
+
+    function switchToView(view) {
+      if (view === currentView) return;
+
+      // Exit DM mode if active
+      if (dmTarget) exitDmMode();
+
+      // Hide current view
+      if (currentView === "global") {
+        messagesDiv.classList.add("view-hidden");
+      } else {
+        const oldEl = document.getElementById("ch-messages-" + currentView);
+        if (oldEl) oldEl.classList.remove("active");
+      }
+
+      currentView = view;
+      userScrolled = false;
+
+      // Show new view
+      if (view === "global") {
+        messagesDiv.classList.remove("view-hidden");
+        channelBar.classList.remove("active");
+        msgInput.placeholder = "Type a message... (/dm name message for DMs)";
+      } else {
+        const el = getOrCreateChannelEl(view);
+        el.classList.add("active");
+        unreadChannels.delete(view);
+
+        // Update channel bar
+        channelBar.classList.add("active");
+        channelBarName.textContent = view;
+        const ch = channels.find(c => c.name === view);
+        channelBarMembers.textContent = ch ? ch.members.length + " members" : "";
+        msgInput.placeholder = "Message #" + view + "...";
+      }
+
+      scrollToBottom(true);
+      renderChannelsSidebar();
+      msgInput.focus();
+      sidebar.classList.remove("open");
+    }
+
+    function updateChannelBar() {
+      if (currentView !== "global") {
+        const ch = channels.find(c => c.name === currentView);
+        if (ch) {
+          channelBarMembers.textContent = ch.members.length + " members";
+        }
+      }
+    }
+
+    // ── DM Mode ───────────────────────────────
+
+    function enterDmMode(name) {
+      // Switch to global view first if in a channel
+      if (currentView !== "global") switchToView("global");
+      dmTarget = name;
+      dmBar.classList.add("active");
+      dmTargetName.textContent = name;
+      msgInput.placeholder = "DM to " + name + "...";
+      msgInput.focus();
+      // Close sidebar on mobile
+      sidebar.classList.remove("open");
+    }
+
+    function exitDmMode() {
+      dmTarget = null;
+      dmBar.classList.remove("active");
+      dmTargetName.textContent = "";
+      msgInput.placeholder = "Type a message... (/dm name message for DMs)";
+      msgInput.focus();
+    }
+
+    dmCloseBtn.addEventListener("click", exitDmMode);
+
+    // ── Channel UI Events ─────────────────────
+
+    channelCreateBtn.addEventListener("click", () => {
+      channelCreateWrap.classList.toggle("active");
+      if (channelCreateWrap.classList.contains("active")) {
+        channelCreateInput.value = "";
+        channelCreateInput.focus();
+      }
+    });
+
+    channelCreateInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const name = channelCreateInput.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+        if (name) {
+          ws.send(JSON.stringify({ type: "create_channel", channel: name }));
+          channelCreateInput.value = "";
+          channelCreateWrap.classList.remove("active");
+        }
+      } else if (e.key === "Escape") {
+        channelCreateWrap.classList.remove("active");
+      }
+    });
+
+    channelLeaveBtn.addEventListener("click", () => {
+      if (currentView !== "global") {
+        ws.send(JSON.stringify({ type: "leave_channel", channel: currentView }));
+      }
+    });
+
+    channelBarClose.addEventListener("click", () => {
+      switchToView("global");
+    });
+
+    // ── Send Message ──────────────────────────
+
+    function sendMessage() {
+      const raw = msgInput.value.trim();
+      if (!raw) return;
+
+      // Check for /dm command (works in any view)
+      const dmMatch = raw.match(/^\/dm\s+(\S+)\s+([\s\S]+)$/);
+      if (dmMatch) {
+        const to = dmMatch[1];
+        const text = dmMatch[2].trim();
+        if (text) {
+          ws.send(JSON.stringify({ type: "dm", to: to, text: text }));
+          // Show locally since server doesn't echo DMs back to sender
+          addChatMsg(to, text, Date.now(), true, "to");
+        }
+        msgInput.value = "";
+        return;
+      }
+
+      // DM mode from sidebar click
+      if (dmTarget) {
+        ws.send(JSON.stringify({ type: "dm", to: dmTarget, text: raw }));
+        addChatMsg(dmTarget, raw, Date.now(), true, "to");
+        msgInput.value = "";
+        return;
+      }
+
+      // Channel message
+      if (currentView !== "global") {
+        ws.send(JSON.stringify({ type: "channel_message", channel: currentView, text: raw }));
+        msgInput.value = "";
+        return;
+      }
+
+      // Global message
+      ws.send(JSON.stringify({ type: "message", text: raw }));
+      msgInput.value = "";
+    }
+
+    sendBtn.addEventListener("click", sendMessage);
+    msgInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+
+    // ── WebSocket ─────────────────────────────
+
+    let reconnectTimer = null;
+    let reconnectDelay = 1000;
+
+    function setConnectionStatus(state) {
+      connDot.className = "";
+      if (state === "connected") {
+        connDot.classList.add("");
+        connText.textContent = "Connected";
+      } else if (state === "reconnecting") {
+        connDot.classList.add("reconnecting");
+        connText.textContent = "Reconnecting...";
+      } else {
+        connDot.classList.add("disconnected");
+        connText.textContent = "Disconnected";
+      }
+    }
+
+    function connect() {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      ws = new WebSocket(protocol + "//" + window.location.host + "/ws");
+
+      ws.addEventListener("open", () => {
+        setConnectionStatus("connected");
+        reconnectDelay = 1000;
+
+        // If we already have a name (reconnecting), re-join
+        if (myName) {
+          ws.send(JSON.stringify({ type: "join", name: myName }));
+          msgInput.disabled = false;
+          sendBtn.disabled = false;
+          // Re-request channels on reconnect
+          ws.send(JSON.stringify({ type: "list_channels" }));
+        }
+      });
+
+      ws.addEventListener("message", (event) => {
+        let msg;
+        try {
+          msg = JSON.parse(event.data);
+        } catch {
+          return;
+        }
+        handleServerMessage(msg);
+      });
+
+      ws.addEventListener("close", () => {
+        setConnectionStatus("reconnecting");
+        msgInput.disabled = true;
+        sendBtn.disabled = true;
+        scheduleReconnect();
+      });
+
+      ws.addEventListener("error", () => {
+        // close event will handle reconnection
+      });
+    }
+
+    function scheduleReconnect() {
+      if (reconnectTimer) return;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        if (!ws || ws.readyState === WebSocket.CLOSED) {
+          connect();
+        }
+      }, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);
+    }
+
+    function handleServerMessage(msg) {
+      switch (msg.type) {
+        case "joined":
+          updateAgents(msg.names);
+          if (msg.name === myName) {
+            // We just joined successfully
+            joinOverlay.classList.add("hidden");
+            app.classList.add("active");
+            msgInput.disabled = false;
+            sendBtn.disabled = false;
+            msgInput.focus();
+            // Request channels list
+            ws.send(JSON.stringify({ type: "list_channels" }));
+          } else {
+            addSystemMsg(msg.name + " joined the chat");
+          }
+          break;
+
+        case "left":
+          agents = agents.filter(n => n !== msg.name);
+          updateAgents(agents);
+          addSystemMsg(msg.name + " left the chat");
+          if (dmTarget === msg.name) {
+            exitDmMode();
+          }
+          break;
+
+        case "message":
+          addChatMsg(msg.from, msg.text, msg.time, false, null);
+          break;
+
+        case "dm":
+          addChatMsg(msg.from, msg.text, msg.time, true, "from");
+          break;
+
+        case "history":
+          renderHistory(msg.messages);
+          break;
+
+        case "channels_list":
+          channels = msg.channels || [];
+          // Rebuild joinedChannels from server data
+          joinedChannels.clear();
+          for (const ch of channels) {
+            if (ch.members.includes(myName)) {
+              joinedChannels.add(ch.name);
+            }
+          }
+          renderChannelsSidebar();
+          break;
+
+        case "channel_created":
+          // Add to channels if not already present
+          if (!channels.find(c => c.name === msg.channel)) {
+            channels.push({ name: msg.channel, members: [msg.by] });
+          }
+          addSystemMsg(msg.by + " created channel #" + msg.channel);
+          renderChannelsSidebar();
+          break;
+
+        case "channel_joined":
+          // Update channel members
+          {
+            const ch = channels.find(c => c.name === msg.channel);
+            if (ch) {
+              ch.members = msg.members;
+            } else {
+              channels.push({ name: msg.channel, members: msg.members });
+            }
+            if (msg.name === myName) {
+              joinedChannels.add(msg.channel);
+              switchToView(msg.channel);
+              // Request channel message history
+              ws.send(JSON.stringify({ type: "read_channel", channel: msg.channel }));
+            } else {
+              addChannelSystemMsg(msg.channel, msg.name + " joined #" + msg.channel);
+            }
+            updateChannelBar();
+            renderChannelsSidebar();
+          }
+          break;
+
+        case "channel_left":
+          {
+            const ch = channels.find(c => c.name === msg.channel);
+            if (ch) {
+              ch.members = ch.members.filter(n => n !== msg.name);
+            }
+            if (msg.name === myName) {
+              joinedChannels.delete(msg.channel);
+              if (currentView === msg.channel) {
+                switchToView("global");
+              }
+            } else {
+              addChannelSystemMsg(msg.channel, msg.name + " left #" + msg.channel);
+            }
+            updateChannelBar();
+            renderChannelsSidebar();
+          }
+          break;
+
+        case "channel_message":
+          addChannelMsg(msg.channel, msg.from, msg.text, msg.time);
+          if (currentView !== msg.channel) {
+            unreadChannels.add(msg.channel);
+            renderChannelsSidebar();
+          }
+          break;
+
+        case "channel_notification":
+          if (currentView === msg.channel) {
+            ws.send(JSON.stringify({ type: "read_channel", channel: msg.channel }));
+          } else {
+            unreadChannels.add(msg.channel);
+            renderChannelsSidebar();
+          }
+          break;
+
+        case "channel_messages":
+          renderChannelMessages(msg.channel, msg.messages || []);
+          break;
+
+        case "error":
+          // If this is during join phase, show in the modal
+          if (!app.classList.contains("active")) {
+            joinError.textContent = msg.message;
+            joinBtn.disabled = false;
+            joinNameInput.disabled = false;
+          } else {
+            addErrorMsg("Error: " + msg.message);
+          }
+          break;
+      }
+    }
+
+    // ── Join Flow ─────────────────────────────
+
+    function doJoin() {
+      const name = joinNameInput.value.trim();
+      if (!name) {
+        joinError.textContent = "Please enter a name";
+        return;
+      }
+
+      joinError.textContent = "";
+      joinBtn.disabled = true;
+      joinNameInput.disabled = true;
+      myName = name;
+
+      // Connect if not already connected, or send join if connected
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "join", name: myName }));
+      } else {
+        connect();
+      }
+    }
+
+    joinBtn.addEventListener("click", doJoin);
+    joinNameInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        doJoin();
+      }
+    });
+
+    // ── Mobile sidebar toggle ─────────────────
+    sidebarToggle.addEventListener("click", () => {
+      sidebar.classList.toggle("open");
+    });
+
+    // Close sidebar on outside click (mobile)
+    document.addEventListener("click", (e) => {
+      if (sidebar.classList.contains("open") &&
+          !sidebar.contains(e.target) &&
+          e.target !== sidebarToggle) {
+        sidebar.classList.remove("open");
+      }
+    });
+
+    // ── Start connection immediately ──────────
+    // Connect early so we can show errors in the join modal
+    connect();
+  </script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "name": "@agent-chat/server",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "bun run --watch src/server.ts",
+    "start": "bun run src/server.ts"
+  }
+}
