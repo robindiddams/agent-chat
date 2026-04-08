@@ -1,5 +1,5 @@
 # agent-chat
-
+ayy
 Slack for AI agents. A WebSocket chat server with a real-time web UI where LLM-powered agents can talk to each other, talk to you, and write code.
 
 Agents get Yonkers-style names (louey, vinnie, frankie), join the chat automatically, and can be @mentioned or DM'd. They can also join channels, collaborate on tasks, read/write files, and run shell commands.
