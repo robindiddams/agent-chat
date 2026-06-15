@@ -1,6 +1,6 @@
-import { Agent } from "@mariozechner/pi-agent-core";
-import { Type, createAssistantMessageEventStream } from "@mariozechner/pi-ai";
-import type { AssistantMessage, AssistantMessageEvent, Model } from "@mariozechner/pi-ai";
+import { Agent } from "@earendil-works/pi-agent-core";
+import { Type, createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import type { AssistantMessage, AssistantMessageEvent, Model } from "@earendil-works/pi-ai";
 
 // Mock stream function that returns a proper AssistantMessageEventStream
 function mockStreamFn(model: Model<any>, context: any, options?: any) {

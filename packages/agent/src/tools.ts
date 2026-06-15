@@ -16,8 +16,8 @@
  * where execute returns AgentToolResult<T> = { content: (TextContent|ImageContent)[], details: T }
  */
 
-import { Type } from "@mariozechner/pi-ai";
-import type { AgentTool } from "@mariozechner/pi-agent-core";
+import { Type } from "@earendil-works/pi-ai";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ChatHarness } from "./harness";
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { spawn } from "child_process";

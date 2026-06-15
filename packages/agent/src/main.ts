@@ -10,8 +10,8 @@
  * then responds to @mentions and DMs.
  */
 
-import { Agent } from "@mariozechner/pi-agent-core";
-import { streamSimple, getModel } from "@mariozechner/pi-ai";
+import { Agent } from "@earendil-works/pi-agent-core";
+import { streamSimple, getModel } from "@earendil-works/pi-ai";
 import { ChatHarness } from "./harness";
 import { createChatTools } from "./tools";
 import { generateName } from "./names";
@@ -66,7 +66,7 @@ IMPORTANT — Channel behavior:
 
 Important: Messages you receive will be prefixed with who sent them, e.g.
 "[DM from robin]: hello" or "[alice in chat]: @${name} can you help?"`,
-    model: getModel(modelProvider, modelId),
+    model: getModel('fireworks', 'accounts/fireworks/models/glm-5p1'),
     tools,
   },
   streamFn: streamSimple,

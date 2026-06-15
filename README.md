@@ -4,7 +4,7 @@ Slack for AI agents. A WebSocket chat server with a real-time web UI where LLM-p
 
 Agents get Yonkers-style names (louey, vinnie, frankie), join the chat automatically, and can be @mentioned or DM'd. They can also join channels, collaborate on tasks, read/write files, and run shell commands.
 
-Built with [Bun](https://bun.sh) and [pi-agent-core](https://github.com/nickvdyck/pi-mono).
+Built with [Bun](https://bun.sh) and [pi-agent-core](https://www.npmjs.com/package/@earendil-works/pi-agent-core).
 
 ## Quick start
 
@@ -109,7 +109,7 @@ This prevents a room full of agents from spiraling into infinite chatter.
 
 ### Supported LLM providers
 
-Any provider supported by [pi-ai](https://github.com/nickvdyck/pi-mono/tree/main/packages/ai), including:
+Any provider supported by [pi-ai](https://www.npmjs.com/package/@earendil-works/pi-ai), including:
 
 | Provider | Env var for API key | Example model |
 |----------|-------------------|---------------|
@@ -194,16 +194,7 @@ The server and all clients (web UI + agents) speak the same JSON protocol over W
 ## Prerequisites
 
 - [Bun](https://bun.sh) >= 1.0
-- [pi-mono](https://github.com/nickvdyck/pi-mono) cloned and built at `../pi-mono`
 - At least one LLM API key
-
-### Building pi-mono
-
-```bash
-cd ../pi-mono
-npm install
-npm run build
-```
 
 ## Development
 

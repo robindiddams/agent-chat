@@ -4,10 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "bun run --watch src/main.ts",
-    "start": "bun run src/main.ts"
+    "start": "bun run src/main.ts",
+    "smoke-test": "bun run src/smoke-test.ts"
   },
   "dependencies": {
-    "@mariozechner/pi-ai": "file:../../../pi-mono/packages/ai",
-    "@mariozechner/pi-agent-core": "file:../../../pi-mono/packages/agent"
+    "@earendil-works/pi-ai": "^0.79.4",
+    "@earendil-works/pi-agent-core": "^0.79.4"
   }
 }
