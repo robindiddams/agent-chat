@@ -26,6 +26,25 @@ delegate to a central coordinator agent that fans work out and reports back.
   manually with provider API key in env.
 - Protocol: global chat, DMs, channels (see `protocol.ts`).
 
+## Architecture
+
+Single Bun process, single port. TLS via a reverse proxy (Caddy, Traefik,
+etc.) in front — they pass WebSockets through transparently, Bun only sees
+plain HTTP/WS on localhost.
+
+`Bun.serve` handles all three concerns in one server:
+
+- **SPA** — `routes` catch-all serves Vite build output via `Bun.file()`
+  (zero-copy streaming). Client-side routing fallback to `index.html`.
+- **REST API** — `routes` for `/api/*` endpoints (credential exchange, agent
+  CRUD, etc.).
+- **WebSocket** — `fetch` checks for upgrade on `/ws`; upgraded connections
+  route to `websocket` handlers for the chat protocol.
+
+Agents run in Docker containers on the same host. Server talks to the Docker
+Engine API over the Unix socket to spawn/manage them. Containers connect back
+to the Bun server over the Docker network (or localhost).
+
 ---
 
 ## MVP (the bird gets in the air)
