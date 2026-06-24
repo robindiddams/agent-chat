@@ -4,13 +4,11 @@ import type { SocketData } from "./room";
 import {
   join, leave, broadcast, dm, sendError, isNameTaken, getNames,
   createChannel, joinChannel, leaveChannel, channelMessage, readChannel, listChannels, getChannelsList,
+  hydrateChannels,
 } from "./room";
-import { loadHistory } from "./history";
+import { seedFromJson } from "./history";
 
 const PORT = parseInt(process.env.PORT || "8080");
-
-// Load persisted chat history on startup
-loadHistory();
 
 const server = Bun.serve<SocketData>({
   port: PORT,
@@ -67,7 +65,7 @@ const server = Bun.serve<SocketData>({
             sendError(ws, `Name "${name}" is already taken`);
             return;
           }
-          join(name, ws);
+          await join(name, ws);
           console.log(`${name} joined (${getNames().length} online)`);
           break;
         }
@@ -104,20 +102,20 @@ const server = Bun.serve<SocketData>({
         case "create_channel": {
           if (!ws.data.name) { sendError(ws, "Must join first"); return; }
           if (!msg.channel?.trim()) { sendError(ws, "Channel name required"); return; }
-          createChannel(msg.channel.trim().toLowerCase(), ws.data.name, ws);
+          await createChannel(msg.channel.trim().toLowerCase(), ws.data.name, ws);
           console.log(`#${msg.channel} created by ${ws.data.name}`);
           break;
         }
 
         case "join_channel": {
           if (!ws.data.name) { sendError(ws, "Must join first"); return; }
-          joinChannel(msg.channel, ws.data.name, ws);
+          await joinChannel(msg.channel, ws.data.name, ws);
           break;
         }
 
         case "leave_channel": {
           if (!ws.data.name) { sendError(ws, "Must join first"); return; }
-          leaveChannel(msg.channel, ws.data.name, ws);
+          await leaveChannel(msg.channel, ws.data.name, ws);
           break;
         }
 
@@ -130,7 +128,7 @@ const server = Bun.serve<SocketData>({
 
         case "read_channel": {
           if (!ws.data.name) { sendError(ws, "Must join first"); return; }
-          readChannel(msg.channel, ws.data.name, ws);
+          await readChannel(msg.channel, ws.data.name, ws);
           break;
         }
 
@@ -154,5 +152,14 @@ const server = Bun.serve<SocketData>({
   },
 });
 
-console.log(`Agent Chat server running on http://localhost:${server.port}`);
-console.log(`WebSocket endpoint: ws://localhost:${server.port}/ws`);
+// Startup: seed from chat-history.json (if needed) then hydrate channels from DB.
+seedFromJson()
+  .then(() => hydrateChannels())
+  .then(() => {
+    console.log(`Agent Chat server running on http://localhost:${server.port}`);
+    console.log(`WebSocket endpoint: ws://localhost:${server.port}/ws`);
+  })
+  .catch((err) => {
+    console.error("Startup failed:", err.message?.replace(/postgres:\/\/[^\s]+/g, "postgres://<redacted>"));
+    process.exit(1);
+  });

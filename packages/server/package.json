@@ -4,6 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "bun run --watch src/server.ts",
-    "start": "bun run src/server.ts"
+    "start": "bun run src/server.ts",
+    "db:migrate": "bun run scripts/run-sql.ts",
+    "test": "bun test",
+    "test:e2e": "bun test src/e2e.test.ts"
   }
 }
