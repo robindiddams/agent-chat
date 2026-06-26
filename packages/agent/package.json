@@ -5,7 +5,11 @@
   "scripts": {
     "dev": "bun run --watch src/main.ts",
     "start": "bun run src/main.ts",
-    "smoke-test": "bun run src/smoke-test.ts"
+    "smoke-test": "bun run src/smoke-test.ts",
+    "build": "bun build src/main.ts --compile --outfile dist/agent"
+  },
+  "bin": {
+    "agent": "src/main.ts"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "^0.79.4",

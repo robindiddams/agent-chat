@@ -23,6 +23,11 @@ import { readFile, writeFile, mkdir } from "fs/promises";
 import { spawn } from "child_process";
 import { dirname } from "path";
 
+/** How long send tools wait for reconnection before reporting "down" (ms). Tunable via env for tests. */
+function toolWaitMs(): number {
+  return parseInt(process.env.AGENT_TOOL_WAIT_MS || "30000", 10);
+}
+
 /**
  * Create the chat tools that the LLM can invoke.
  * The harness reference lets tools send messages via WebSocket.
@@ -41,10 +46,25 @@ export function createChatTools(harness: ChatHarness): AgentTool<any>[] {
         _toolCallId: string,
         params: { text: string },
       ) => {
-        harness.sendMessage(params.text);
+        if (harness.isConnected()) {
+          harness.sendMessage(params.text);
+          return {
+            content: [{ type: "text" as const, text: `Message sent to chat: ${params.text}` }],
+            details: { sent: true },
+          };
+        }
+        // Connection is down — wait up to 30s for reconnect, then report.
+        const reconnected = await harness.waitForConnection(toolWaitMs());
+        if (reconnected) {
+          harness.sendMessage(params.text);
+          return {
+            content: [{ type: "text" as const, text: `Message sent to chat (after reconnect): ${params.text}` }],
+            details: { sent: true, waited: true },
+          };
+        }
         return {
-          content: [{ type: "text" as const, text: `Message sent to chat: ${params.text}` }],
-          details: {},
+          content: [{ type: "text" as const, text: "Chat connection is down (reconnecting in background). The message was NOT sent. You can retry send_message later, or continue other work." }],
+          details: { sent: false, connected: false },
         };
       },
     },
@@ -61,12 +81,28 @@ export function createChatTools(harness: ChatHarness): AgentTool<any>[] {
         _toolCallId: string,
         params: { to: string; text: string },
       ) => {
-        harness.sendDm(params.to, params.text);
+        if (harness.isConnected()) {
+          harness.sendDm(params.to, params.text);
+          return {
+            content: [
+              { type: "text" as const, text: `DM sent to ${params.to}: ${params.text}` },
+            ],
+            details: { sent: true },
+          };
+        }
+        const reconnected = await harness.waitForConnection(toolWaitMs());
+        if (reconnected) {
+          harness.sendDm(params.to, params.text);
+          return {
+            content: [
+              { type: "text" as const, text: `DM sent to ${params.to} (after reconnect): ${params.text}` },
+            ],
+            details: { sent: true, waited: true },
+          };
+        }
         return {
-          content: [
-            { type: "text" as const, text: `DM sent to ${params.to}: ${params.text}` },
-          ],
-          details: {},
+          content: [{ type: "text" as const, text: `Chat connection is down (reconnecting in background). The DM to ${params.to} was NOT sent. You can retry dm later, or continue other work.` }],
+          details: { sent: false, connected: false },
         };
       },
     },
@@ -155,12 +191,28 @@ export function createChatTools(harness: ChatHarness): AgentTool<any>[] {
         _toolCallId: string,
         params: { channel: string; text: string },
       ) => {
-        harness.sendChannelMessage(params.channel, params.text);
+        if (harness.isConnected()) {
+          harness.sendChannelMessage(params.channel, params.text);
+          return {
+            content: [
+              { type: "text" as const, text: `Sent to #${params.channel}: ${params.text}` },
+            ],
+            details: { sent: true },
+          };
+        }
+        const reconnected = await harness.waitForConnection(toolWaitMs());
+        if (reconnected) {
+          harness.sendChannelMessage(params.channel, params.text);
+          return {
+            content: [
+              { type: "text" as const, text: `Sent to #${params.channel} (after reconnect): ${params.text}` },
+            ],
+            details: { sent: true, waited: true },
+          };
+        }
         return {
-          content: [
-            { type: "text" as const, text: `Sent to #${params.channel}: ${params.text}` },
-          ],
-          details: {},
+          content: [{ type: "text" as const, text: `Chat connection is down (reconnecting in background). The message to #${params.channel} was NOT sent. You can retry send_channel_message later, or continue other work.` }],
+          details: { sent: false, connected: false },
         };
       },
     },
