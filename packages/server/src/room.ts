@@ -50,6 +50,19 @@ export function isNameTaken(name: string): boolean {
   return clients.has(name);
 }
 
+/** Get the live socket for a connected client (or undefined if offline). */
+export function getSocket(name: string): Socket | undefined {
+  return clients.get(name);
+}
+
+/** Send a message to a specific connected client by name. */
+export function sendTo(name: string, msg: ServerMessage): boolean {
+  const ws = clients.get(name);
+  if (!ws) return false;
+  send(ws, msg);
+  return true;
+}
+
 function send(ws: Socket, msg: ServerMessage): void {
   ws.send(JSON.stringify(msg));
 }

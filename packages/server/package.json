@@ -5,8 +5,9 @@
   "scripts": {
     "dev": "bun run --watch src/server.ts",
     "start": "bun run src/server.ts",
-    "db:migrate": "bun run scripts/run-sql.ts",
+    "db:migrate": "bun run scripts/run-sql.ts && bun run scripts/run-sql.ts db/002_agent_tokens.sql",
     "test": "bun test",
-    "test:e2e": "bun test src/e2e.test.ts"
+    "test:e2e": "bun test src/e2e.test.ts",
+    "test:agents": "bun test src/agents.test.ts"
   }
 }

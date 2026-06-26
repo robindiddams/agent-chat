@@ -1,6 +1,6 @@
 // ── Client → Server ──────────────────────────────────
 
-export type JoinMessage = { type: "join"; name: string };
+export type JoinMessage = { type: "join"; name: string; token?: string };
 export type ChatMessage = { type: "message"; text: string };
 export type DmMessage = { type: "dm"; to: string; text: string };
 export type CreateChannelMessage = { type: "create_channel"; channel: string };
@@ -36,6 +36,7 @@ export type ChannelMessageEvent = { type: "channel_message"; channel: string; fr
 export type ChannelNotificationEvent = { type: "channel_notification"; channel: string };
 export type ChannelMessagesEvent = { type: "channel_messages"; channel: string; messages: StoredMessage[] };
 export type ChannelsListEvent = { type: "channels_list"; channels: ChannelInfo[] };
+export type ShutdownEvent = { type: "shutdown" };
 
 export type ServerMessage =
   | JoinedEvent
@@ -50,7 +51,8 @@ export type ServerMessage =
   | ChannelMessageEvent
   | ChannelNotificationEvent
   | ChannelMessagesEvent
-  | ChannelsListEvent;
+  | ChannelsListEvent
+  | ShutdownEvent;
 
 // ── Helper types ─────────────────────────────────────
 
