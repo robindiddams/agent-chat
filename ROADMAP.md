@@ -1,7 +1,8 @@
 # agent-chat — Roadmap
 
-> Status: prototype working again on latest pi (`@earendil-works/pi-*` `^0.79.4`).
-> This doc plans the path from prototype → shippable, OSS-able product.
+> Status: DB-backed server + credential handoff working. Agent ships as a
+> compiled binary that bootstraps creds from the server and joins over WS.
+> Docker lifecycle and the new UI are the remaining MVP pieces.
 
 ## Vision
 
@@ -12,152 +13,156 @@ delegate to a central coordinator agent that fans work out and reports back.
 ## Guiding constraints
 
 - **Runtime: Bun** (Node fallback if a dep forces it).
-- **No Python.** Rules out LiteLLM Proxy and other Python-only infra. Anything we
-  adopt must be Node/TS or a language-agnostic binary/service.
-- **Headed for open source** — keep config/secrets clean, no hardcoded keys, sane
+- **No Python.** Anything we adopt must be Node/TS or a language-agnostic binary.
+- **Headed for open source** — clean config/secrets, no hardcoded keys, sane
   defaults, documented setup.
-- **Sandboxed by default** — agents run in containers, not in the server process.
-
-## Current state (baseline)
-
-- `packages/server` — Bun WebSocket server + vanilla HTML/JS UI (`ui.html`).
-  In-memory state + `chat-history.json` on disk.
-- `packages/agent` — raw `Agent` from pi-agent-core over a WS harness. Launched
-  manually with provider API key in env.
-- Protocol: global chat, DMs, channels (see `protocol.ts`).
+- **Sandboxed by default** — agents run in containers, not in the server process
+  (Docker deferred — see below; until then agents run as a host binary).
 
 ## Architecture
 
-Single Bun process, single port. TLS via a reverse proxy (Caddy, Traefik,
-etc.) in front — they pass WebSockets through transparently, Bun only sees
-plain HTTP/WS on localhost.
+Single Bun process, single port. TLS via a reverse proxy (Caddy, Traefik, etc.)
+in front — they pass WebSockets through transparently, Bun only sees plain
+HTTP/WS on localhost. Today it runs on a private tailnet with no human auth.
 
-`Bun.serve` handles all three concerns in one server:
+`Bun.serve` handles three concerns in one server:
 
-- **SPA** — `routes` catch-all serves Vite build output via `Bun.file()`
-  (zero-copy streaming). Client-side routing fallback to `index.html`.
-- **REST API** — `routes` for `/api/*` endpoints (credential exchange, agent
-  CRUD, etc.).
-- **WebSocket** — `fetch` checks for upgrade on `/ws`; upgraded connections
-  route to `websocket` handlers for the chat protocol.
+- **SPA** — catch-all serves the UI (still `ui.html` today; React SPA pending).
+- **REST API** — `/api/*` endpoints (agent CRUD, credential exchange).
+- **WebSocket** — upgrade on `/ws`; the chat protocol (see `src/protocol.ts`).
 
-Agents run in Docker containers on the same host. Server talks to the Docker
-Engine API over the Unix socket to spawn/manage them. Containers connect back
-to the Bun server over the Docker network (or localhost).
+State lives in **Postgres** (`DATABASE_URL`), accessed via Bun's native SQL
+client (no ORM). Tables: `agents`, `channels`, `channel_members`, `messages`,
+`agent_tokens`. Migrations in `packages/server/db/*.sql` (`bun run db:migrate`).
+
+Agents run out-of-process. Today: a compiled `dist/agent` binary launched with a
+bootstrap token. Later: Docker containers spawned by the server over the Docker
+Engine API; containers connect back over the network and use the same bootstrap
+seam.
 
 ---
 
-## MVP (the bird gets in the air)
+## Done
 
-Three pillars. Ship these and it's a real thing.
+### Database backend ✅
+Postgres replaces `chat-history.json` + in-memory maps. Messages, channels,
+channel membership, and the agent registry are all persisted. Channel membership
+is persistent (Slack-like: disconnect is presence, not leaving). Existing
+`chat-history.json` is seeded into `messages` on first boot (guarded, one-time).
+
+### Credential handoff + create-agent flow (no Docker) ✅
+The server is the credential authority. Provider keys live in
+`packages/server/.env` (or the shell env); the server hands each agent what it
+needs at boot.
+
+- `POST /api/agents` {description, name?, provider?, model?} → registers the
+  agent, mints a **reusable bootstrap token** (no TTL), returns
+  `agent --token <X>`.
+- `POST /api/agents/bootstrap` {token} → exchanges the token for
+  `{name, systemPrompt, provider, model, apiKey, accessToken, wsUrl}`. Each
+  bootstrap mints a fresh access token (prior ones invalidated).
+- Agent binary (`bun build --compile` → `dist/agent`) runs `agent --token <X>
+  --server <url>`, bootstraps, joins WS with the access token, downloads
+  history, and boots the pi agent with the server-supplied system prompt + key.
+- **System-prompt generation is stubbed** (description used verbatim) — the real
+  LLM call is the next task.
+- **Kill:** `POST /api/agents/:name/stop` → server sends `{type:"shutdown"}`
+  over the agent's live WS → agent exits 0. (Authoritative kill comes with
+  Docker.)
+- **Reconnect:** the harness auto-reconnects with backoff, tries for up to 1h,
+  never crashes on WS failure, and re-joins on reconnect. Send tools called while
+  disconnected wait briefly for reconnect, then return a "connection down" result
+  (no silent no-op, no buffering) — the agent decides whether to retry.
+- Tokens are 96-bit base64url (16 chars); stored as **SHA-256** hashes
+  (`node:crypto`, portable). Bootstrap tokens are reusable so restart/reconnect
+  always works.
+
+Tests: `bun test` in each package (self-cleaning; set `TEST_DATABASE_URL` to
+isolate). 21/21 pass.
+
+---
+
+## MVP — remaining
 
 ### 1. New UI (replace `ui.html`)
-
-- Move off vanilla HTML/JS to a **vanilla React SPA** — client-side only, **no
-  Next.js / server components / SSR**. Plain React + a bundler (Vite), built to
-  static assets and served by the Bun server (separate Vite dev server in dev).
+- **Vanilla React SPA** — client-side only, no Next/SSR. Vite, built to static
+  assets served by the Bun server (separate Vite dev server in dev).
 - The Vercel `ai` SDK chatbot helpers (`useChat`, `assistant-ui`) work fine in a
-  client-only SPA — useful for the Quartermaster chat surface later — but we are
-  **not** adopting the Next.js app-router parts of that ecosystem.
-- **Kill the global chat room.** Interaction model becomes: channels + direct
-  agent conversations (+ later, the Quartermaster).
-- Major UX pass: channel list / sidebar, per-agent or per-channel conversation
-  view, presence, message threading/streaming.
-- Decision: bundler/tooling (Vite assumed), component/styling approach.
+  client-only SPA — useful for the Quartermaster later — but **not** the Next.js
+  app-router parts.
+- **Kill the global chat room.** Interaction model: channels + direct agent
+  conversations (+ later, the Quartermaster).
+- UX pass: channel list / sidebar, per-channel/per-agent conversation view,
+  presence, message threading/streaming. "Add agent" button drives the
+  create-agent flow above (stop/restart/remove lifecycle controls).
+- Open: styling / component approach.
 
-### 2. Create-agent flow (UI button → sandboxed container)
+### 2. Real system-prompt generation (next task)
+Replace the stub: one LLM call (pi-ai `completeSimple`/`streamSimple` on the
+server) turns the user's description into a system prompt, plus picks a default
+model/provider. Keeps the server the authority for prompt + model.
 
-The headline feature. User clicks **"Add"**, the system builds and launches an
-agent. Flow:
+### 3. Docker-managed lifecycle
+Slot Docker in behind the existing bootstrap seam — instead of printing
+`agent --token <X>`, the server runs it inside a container.
 
-1. UI: "Add agent" → user types a **description** of what the agent should do.
-2. Server: an LLM call **generates the system prompt** from the description
-   (plus name, default model/provider).
-3. Server **spins up a sandboxed agent container** by talking to the **Docker
-   socket** (no shelling out to `docker` CLI if avoidable — use the Docker Engine
-   API over the socket).
-4. Container boots the agent, **connects back** to the server, and **receives its
-   model/provider id + token** (transport TBD — over the WS join handshake, or a
-   small HTTP/API call on startup). See "Credential handoff" below.
-5. Agent runs as it does today (harness + tools) and appears in the UI.
-
-Sub-tasks:
-- **Build the agent Docker image** (`packages/agent` containerized; Bun base
-  image; entrypoint reads config from env/handshake; no baked-in secrets).
-- Server-side Docker orchestration module: **spawn containers via the Docker
-  Engine API over the Unix socket** (no shelling out to `docker` CLI). Create/start/
-  stop/remove, health/lifecycle, cleanup on disconnect. (Post-MVP: add UI pages
-  for raw docker logs and container config per-agent.)
-- System-prompt generation endpoint/tool (one LLM call; reuse pi-ai).
-- "Add agent" UI flow + agent lifecycle controls (stop/restart/remove).
-
-### 3. Database backend
-
-- Replace `chat-history.json` + in-memory maps with a real DB for: chat/channel
-  messages, channel metadata/membership, agent registry (name, description,
-  system prompt, model/provider, container id, status), and later usage/keys.
-- **Pick a DB — Postgres is the default candidate.** Decide on access layer
-  (e.g. Drizzle ORM for TS-first migrations, or a thin query layer). Note Bun ships
-  a native `Bun.sql` Postgres client.
-- Migration story for OSS users (docker-compose with Postgres alongside).
-
-### Credential handoff (part of MVP)
-
-Agents do not ship with provider keys. The server is the credential authority and
-hands each agent what it needs on boot.
-
-- On agent boot/join, the server hands the agent its **model/provider id + a
-  token** (and, later, a **base URL** to route LLM traffic through).
-- pi makes the client side trivial: wrap `streamFn` around `streamSimple` with an
-  overridden `model.baseUrl` + per-request `apiKey`/`headers`. No fork needed
-  (providers already read `model.baseUrl`, `options.apiKey`, `options.headers`).
-- Transport: **HTTP REST**. Container is created with a one-time token baked in
-  (env or config). On boot the agent calls a REST endpoint with that token to
-  exchange it for its provider key + model/provider id + an access token for the
-  server (access token details TBD). The one-time token is then spent/invalidated.
-- Key lifecycle: TBD.
+- Containerize `packages/agent` (Bun base image; entrypoint takes the token; no
+  baked-in secrets).
+- Server-side Docker orchestration: spawn/stop/remove via the **Docker Engine
+  API over the Unix socket** (no shelling out to `docker` CLI). Health/lifecycle,
+  cleanup on disconnect.
+- `stop` becomes authoritative (`container stop`) instead of cooperative.
+- Post-MVP: UI pages for raw docker logs + container config per agent.
 
 **MVP definition of done:** modern component UI, no global chat, click-to-create
-a sandboxed agent in a container that connects, **receives its creds from the
-server**, and works — all state in Postgres.
+a sandboxed agent in a container that connects, receives its creds from the
+server, and works — all state in Postgres.
 
 ---
 
-## Next (post-MVP, ordered)
+## Post-MVP (ordered)
 
-### 4. AI gateway (maybe)
+### 4. Access-token persistence + rotation
+Agent persists `{name, accessToken}` locally so it can rejoin without
+re-bootstrapping; bootstrap returns to being one-time issuance; the access token
+becomes the durable, rotatable session credential. (Replaces the current
+reusable-bootstrap simplification.)
 
-> Parked — still chewing on this. Idea: route all agent LLM traffic through a
-> self-hosted gateway on the server for per-agent keys, spend limits, routing,
-> and observability. Revisit once the MVP credential handoff is in place; it
-> would slot in behind the same handoff seam. (Constraint: no Python.)
+### 5. Offline-work redesign (fuzzy)
+Today an agent can't be given *new* work while the WS pipe is down (the chat
+surface is the only inbound channel). A non-chat control surface / job queue
+would let agents work with no live WS connection.
 
-### 5. Quartermaster (central coordinator agent) — fuzzy, likely last
+### 6. AI gateway (maybe)
+> Parked. Route all agent LLM traffic through a self-hosted gateway on the
+> server for per-agent keys, spend limits, routing, observability. Slots in
+> behind the same handoff seam. (Constraint: no Python.)
 
-- A server-resident chatbot agent ("Quartermaster" / "Maker") I talk to via a
-  normal AI chat interface (Vercel AI SDK `useChat` surface from #1).
-- Has a `create_agent` tool (drives the #2 flow programmatically) and can survey
-  channels/agents to answer "what's the status on X?" by delegating and
-  reporting back.
-- Deliberately scoped last — interaction model and tool surface need to settle
-  after the create-agent flow and channels UX exist.
+### 7. Quartermaster (central coordinator agent) — likely last
+- A server-resident chatbot agent ("Quartermaster" / "Maker") via a normal AI
+  chat interface (Vercel AI SDK `useChat` surface from #1).
+- Has a `create_agent` tool (drives the create-agent flow programmatically) and
+  can survey channels/agents to answer "what's the status on X?" by delegating
+  and reporting back.
+- Deliberately last — interaction model + tool surface settle after the
+  create-agent flow and channels UX exist.
 
 ---
 
-## Open decisions (track these)
+## Open decisions
 
-- UI: **vanilla React SPA** (Vite, no Next/SSR) — settled. Remaining: styling/
+- UI: vanilla React SPA (Vite, no Next/SSR) — settled. Remaining: styling /
   component approach.
-- Database: **Postgres + Bun.sql** (native Bun Postgres client, no ORM layer).
-- Credential transport: **HTTP REST** — settled. One-time token → provider key +
-  model id + server access token. Access token shape TBD.
-- Container orchestration: **Docker Engine API over Unix socket** — settled.
-  Logs/config UI pages deferred to post-MVP.
-- Key lifecycle: TBD.
+- System-prompt generation: approach + which model the *server* uses to generate
+  it (next task).
+- Docker orchestration: Docker Engine API over Unix socket — settled. Logs /
+  config UI deferred.
+- Key lifecycle: provider key handed to the agent in clear today (MVP); a future
+  gateway swaps that for scoped keys + a `baseUrl` with no agent changes.
 
 ## Explicitly out of scope / deferred
 
-- Global chat room (being removed in MVP).
-- AI gateway / per-agent key minting (parked — see #4; revisit later).
+- Global chat room (removed in MVP).
+- AI gateway / per-agent key minting (parked — see #6).
 - Any Python-based infra.
 - Multi-tenant / auth hardening beyond what OSS launch needs (revisit pre-launch).
