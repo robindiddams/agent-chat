@@ -21,7 +21,7 @@
 - [x] A3. `src/credentials.ts` — `getProviderKey(provider)` from `.env`
 - [x] A4. `src/agents.ts` — `createAgent` / `bootstrapAgent` / `validateAccessToken` / `setStatus` / list/find + stubbed prompt-gen
 - [x] A5. `src/server.ts` — `/api/agents` (+bootstrap, +:name/stop), GET registry; WS join token check for registered agents; `{type:"shutdown"}`
-- [ ] A6. Add `FIREWORKS_API_KEY` to `packages/server/.env` (deferred to user — needed for a live bootstrap; tests use a dummy key)
+- [x] A6. Provider key is runtime config, not a task — `credentials.ts` reads `process.env`; populate `FIREWORKS_API_KEY` via shell export or `packages/server/.env` (gitignored). No code change.
 
 ## Phase B — agent: binary + bootstrap
 - [x] B1. `src/bootstrap.ts` — HTTP exchange + `resolveModel(provider, model)` (`getModel` if known, else hand-built `Model`)
