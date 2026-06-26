@@ -15,6 +15,7 @@
 import { sql } from "./db";
 import { mintToken, hashToken, type TokenKind } from "./tokens";
 import { getProviderKey } from "./credentials";
+import { generateSystemPrompt } from "./prompt-gen";
 
 // ── Defaults (match today's single-agent setup) ───────
 
@@ -98,7 +99,10 @@ export async function createAgent(input: CreateAgentInput): Promise<CreateAgentR
   const name = input.name?.trim() || await generateUniqueName();
   const provider = input.provider?.trim() || DEFAULT_PROVIDER;
   const model = input.model?.trim() || DEFAULT_MODEL;
-  const systemPrompt = input.description.trim(); // STUB: use description verbatim
+  // Generate the system prompt via an LLM call (falls back to description if
+  // no key configured or the call fails).
+  const gen = await generateSystemPrompt(input.description);
+  const systemPrompt = gen?.prompt ?? input.description.trim();
 
   // Check name isn't already taken
   const existing = await sql<{ name: string }[]>`SELECT name FROM agents WHERE name = ${name}`;
@@ -108,8 +112,9 @@ export async function createAgent(input: CreateAgentInput): Promise<CreateAgentR
 
   // Insert agent row
   await sql`
-    INSERT INTO agents (name, description, system_prompt, model, provider, status)
-    VALUES (${name}, ${input.description.trim()}, ${systemPrompt}, ${model}, ${provider}, 'created')
+    INSERT INTO agents (name, description, system_prompt, model, provider, status, prompt_generated_at, prompt_gen_model)
+    VALUES (${name}, ${input.description.trim()}, ${systemPrompt}, ${model}, ${provider}, 'created',
+            ${gen ? new Date().toISOString() : null}, ${gen?.model ?? null})
   `;
 
   // Mint bootstrap + access tokens (store hashes only)

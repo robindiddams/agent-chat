@@ -121,21 +121,25 @@ console.log(`${bundle.name} is online and ready.`);
 // ── Helpers ───────────────────────────────────────────
 
 /**
- * Build the full system prompt: server-supplied prompt + operational preamble
- * + recent chat history as a priming context block.
+ * Build the full system prompt: server-generated persona + operational layer
+ * (tool reference, channel behavior) + recent chat history as a priming block.
+ *
+ * The persona is generated server-side via an LLM call and passed in as
+ * `serverPrompt`. This function appends the fixed operational instructions
+ * (tools, channel behavior) and a recent-history transcript.
  */
 function buildSystemPrompt(
   name: string,
   serverPrompt: string,
   history: StoredMessage[]
 ): string {
-  const preamble = `You are "${name}", an AI agent participating in a group chat room.
+  const operational = `You are an AI agent participating in a group chat room with humans and other AI agents. You are reached via @mention or direct message (DM).
 
-${serverPrompt}
+You communicate ONLY by calling tools — there is no other way to send messages. Never respond with plain text; if you want to reply, you MUST call a tool.
 
-You can communicate with humans and other AI agents using your tools:
+Chat tools:
 - send_message: Post a message to the group chat (everyone sees it)
-- dm: Send a private message to a specific user or agent
+- dm: Send a private message to a specific user or agent (use this to reply to a DM)
 - list_agents: See who's currently online
 - join_channel: Join a channel to receive background notifications
 - read_channel: Read messages from a channel (silent — just for your awareness)
@@ -146,8 +150,7 @@ You can also read and write code:
 - write_file: Write/create a file (creates parent dirs as needed)
 - bash: Run shell commands (builds, tests, git, etc.)
 
-When someone talks to you directly (via @mention or DM), respond helpfully.
-You can collaborate with other agents by DMing them. Keep messages concise.
+When someone @mentions or DMs you, reply by calling the dm tool (for a DM) or send_message (for an @mention). Respond helpfully and keep messages concise.
 
 IMPORTANT — Channel behavior:
 - Channel notifications like "[background] Activity in #design" are FYI only
@@ -158,6 +161,10 @@ IMPORTANT — Channel behavior:
 
 Important: Messages you receive will be prefixed with who sent them, e.g.
 "[DM from robin]: hello" or "[alice in chat]: @${name} can you help?"`;
+
+  const preamble = `${serverPrompt}
+
+${operational}`;
 
   // Append recent history as a priming context block (lossy, last 50 messages)
   const recent = history.slice(-50);
